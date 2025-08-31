@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>布雷森汉姆直线算法可视化</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+<script>
+tailwind.config = {
+    theme: {
+        extend: {
+            colors: {
+                primary: '#3B82F6',
+                secondary: '#10B981',
+                accent: '#8B5CF6',
+                neutral: '#1F2937',
+                light: '#F3F4F6'
+            },
+            fontFamily: {
+                sans: ['Inter', 'system-ui', 'sans-serif'],
+            },
+        }
+    }
+}
+</script>
+</head>
+<body class="bg-gray-50 font-sans text-neutral">
+<div class="container mx-auto px-4 py-8 max-w-6xl">
+<header class="mb-8 text-center">
+    <h1 class="text-3xl font-bold text-neutral mb-2">布雷森汉姆直线算法可视化</h1>
+    <p class="text-gray-600 max-w-2xl mx-auto">
+        交互式演示布雷森汉姆(Bresenham)直线绘制算法的工作原理
+    </p>
+</header>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+    <!-- 控制面板 -->
+    <div class="bg-white rounded-xl shadow-md p-6 lg:col-span-1">
+        <h2 class="text-xl font-semibold mb-4 flex items-center">
+            <i class="fa fa-sliders text-primary mr-2"></i>参数设置
+        </h2>
+        
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">起点坐标 (x1, y1)</label>
+                <div class="flex gap-2">
+                    <input type="number" id="x1" value="5" min="0" max="40" class="w-1/2 px-3 py-2 border rounded-md">
+                    <input type="number" id="y1" value="5" min="0" max="30" class="w-1/2 px-3 py-2 border rounded-md">
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">终点坐标 (x2, y2)</label>
+                <div class="flex gap-2">
+                    <input type="number" id="x2" value="30" min="0" max="40" class="w-1/2 px-3 py-2 border rounded-md">
+                    <input type="number" id="y2" value="20" min="0" max="30" class="w-1/2 px-3 py-2 border rounded-md">
+                </div>
+            </div>
+            <button id="drawBtn" class="w-full bg-primary hover:bg-primary/90 text-white py-2 rounded-md">
+                <i class="fa fa-paint-brush"></i> 绘制直线
+            </button>
+            <button id="stepBtn" class="w-full bg-accent hover:bg-accent/90 text-white py-2 rounded-md">
+                <i class="fa fa-step-forward"></i> 逐步演示
+            </button>
+            <button id="resetBtn" class="w-full bg-gray-200 hover:bg-gray-300 py-2 rounded-md">
+                <i class="fa fa-refresh"></i> 重置
+            </button>
+        </div>
+        
+        <div class="mt-8">
+            <h2 class="text-xl font-semibold mb-4 flex items-center">
+                <i class="fa fa-info-circle text-primary mr-2"></i>算法步骤
+            </h2>
+            <div id="stepsContainer" class="space-y-2 max-h-60 overflow-y-auto pr-2 text-sm">
+                <p class="text-gray-500 italic">点击"逐步演示"查看算法执行步骤...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 可视化区域 -->
+    <div class="lg:col-span-2">
+        <div class="bg-white rounded-xl shadow-md p-6 h-full flex flex-col">
+            <h2 class="text-xl font-semibold mb-4">
+                可视化结果
+            </h2>
+            <div class="flex-grow relative overflow-auto bg-light rounded-lg border border-gray-200">
+                <canvas id="drawingCanvas" width="820" height="620"></canvas>
+            </div>
+            <div class="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <h3 class="font-medium mb-2">生成的点集</h3>
+                <div id="pointsList" class="text-sm text-gray-700 max-h-24 overflow-y-auto">
+                    <p class="text-gray-500 italic">请点击绘制按钮生成直线...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+</div>
+
+<script>
+let canvas, ctx, points = [], stepPoints = [], stepIndex = 0, isStepping = false;
+
+window.addEventListener('DOMContentLoaded', () => {
+    canvas = document.getElementById('drawingCanvas');
+    ctx = canvas.getContext('2d');
+    drawGrid();
+
+    document.getElementById('drawBtn').addEventListener('click', drawLine);
+    document.getElementById('stepBtn').addEventListener('click', stepThrough);
+    document.getElementById('resetBtn').addEventListener('click', resetDrawing);
+});
+
+function drawGrid(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.strokeStyle = '#E5E7EB';
+    ctx.lineWidth = 1;
+    // 完整网格
+    for(let x=0; x<=40; x++){
+        ctx.beginPath();
+        ctx.moveTo(x*20,0);
+        ctx.lineTo(x*20, canvas.height);
+        ctx.stroke();
+    }
+    for(let y=0; y<=30; y++){
+        ctx.beginPath();
+        ctx.moveTo(0,y*20);
+        ctx.lineTo(canvas.width, y*20);
+        ctx.stroke();
+    }
+    // 坐标轴刻度
+    ctx.fillStyle = '#6B7280';
+    ctx.font = '10px Arial';
+    for (let x=0; x<=40; x+=5) ctx.fillText(x, x*20+2, 12);
+    for (let y=0; y<=30; y+=5) ctx.fillText(y, 2, y*20+12);
+}
+
+function bresenham(start, end, steps=null){
+    let [x1,y1] = start, [x2,y2] = end;
+    let dx = Math.abs(x2-x1), dy = Math.abs(y2-y1);
+    let sx = x1 < x2 ? 1 : -1;
+    let sy = y1 < y2 ? 1 : -1;
+    let err = dx - dy;
+    const pts = [];
+    if(steps) steps.push(`起点(${x1},${y1}) → 终点(${x2},${y2})`);
+    while(true){
+        pts.push([x1,y1]);
+        if(x1===x2 && y1===y2) break;
+        let e2 = 2*err;
+        if(e2 > -dy){ err -= dy; x1 += sx; }
+        if(e2 < dx){ err += dx; y1 += sy; }
+    }
+    return pts;
+}
+
+function drawLine(){
+    resetDrawing();
+    const x1 = +document.getElementById('x1').value;
+    const y1 = +document.getElementById('y1').value;
+    const x2 = +document.getElementById('x2').value;
+    const y2 = +document.getElementById('y2').value;
+    const steps = [];
+    points = bresenham([x1,y1],[x2,y2],steps);
+    displaySteps(steps);
+    displayPoints(points);
+    drawPoints(points);
+}
+
+function stepThrough(){
+    if(!isStepping){
+        resetDrawing();
+        const x1 = +document.getElementById('x1').value;
+        const y1 = +document.getElementById('y1').value;
+        const x2 = +document.getElementById('x2').value;
+        const y2 = +document.getElementById('y2').value;
+        const steps = [];
+        stepPoints = bresenham([x1,y1],[x2,y2],steps);
+        displaySteps(steps);
+        stepIndex = 0;
+        isStepping = true;
+        document.getElementById('stepBtn').innerHTML = '<i class="fa fa-step-forward"></i> 下一步';
+    } else {
+        if(stepIndex < stepPoints.length){
+            drawPoints(stepPoints.slice(0, stepIndex+1));
+            displayPoints(stepPoints.slice(0, stepIndex+1));
+            stepIndex++;
+        } else {
+            isStepping = false;
+            document.getElementById('stepBtn').innerHTML = '<i class="fa fa-step-forward"></i> 逐步演示';
+        }
+    }
+}
+
+function drawPoints(pts){
+    drawGrid();
+    ctx.fillStyle = '#3B82F6';
+    pts.forEach(([x,y])=>{
+        ctx.fillRect(x*20,y*20,20,20);
+    });
+}
+
+function displayPoints(pts){
+    const list = document.getElementById('pointsList');
+    if(!pts.length){
+        list.innerHTML = '<p class="text-gray-500 italic">请点击绘制按钮生成直线...</p>';
+        return;
+    }
+    list.innerHTML = pts.map(p=>`(${p[0]},${p[1]})`).join(' , ');
+}
+
+function displaySteps(steps){
+    document.getElementById('stepsContainer').innerHTML = steps.map(
+        (s,i)=>`<div>${i+1}. ${s}</div>`
+    ).join('');
+}
+
+function resetDrawing(){
+    points = [];
+    stepPoints = [];
+    stepIndex = 0;
+    isStepping = false;
+    drawGrid();
+    displayPoints([]);
+    document.getElementById('stepsContainer').innerHTML = '<p class="text-gray-500 italic">点击"逐步演示"查看算法执行步骤...</p>';
+    document.getElementById('stepBtn').innerHTML = '<i class="fa fa-step-forward"></i> 逐步演示';
+}
+</script>
+</body>
+</html>
+
