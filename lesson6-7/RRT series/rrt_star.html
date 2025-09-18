@@ -1,0 +1,1047 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RRT*路径规划算法可视化</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', 'system-ui', sans-serif;
+            background-color: #f3f4f6;
+            color: #1e293b;
+        }
+        .canvas-container {
+            position: relative;
+            border: 2px solid #1e293b;
+            border-radius: 0.5rem;
+            overflow: hidden;
+            background-color: #f8fafc;
+            height: 500px;
+        }
+        .control-btn {
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            font-weight: 500;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .control-btn-primary {
+            background-color: #3b82f6;
+            color: white;
+        }
+        .control-btn-primary:hover {
+            background-color: rgba(59, 130, 246, 0.9);
+        }
+        .control-btn-primary:active {
+            background-color: rgba(59, 130, 246, 0.8);
+        }
+        .control-btn-secondary {
+            background-color: #10b981;
+            color: white;
+        }
+        .control-btn-secondary:hover {
+            background-color: rgba(16, 185, 129, 0.9);
+        }
+        .control-btn-secondary:active {
+            background-color: rgba(16, 185, 129, 0.8);
+        }
+        .control-btn-danger {
+            background-color: #ef4444;
+            color: white;
+        }
+        .control-btn-danger:hover {
+            background-color: rgba(239, 68, 68, 0.9);
+        }
+        .control-btn-danger:active {
+            background-color: rgba(239, 68, 68, 0.8);
+        }
+        .control-btn-accent {
+            background-color: #f59e0b;
+            color: white;
+        }
+        .control-btn-accent:hover {
+            background-color: rgba(245, 158, 11, 0.9);
+        }
+        .control-btn-accent:active {
+            background-color: rgba(245, 158, 11, 0.8);
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body class="min-h-screen">
+    <div class="container mx-auto px-4 py-8 max-w-6xl">
+        <!-- 标题区域 -->
+        <header class="mb-8 text-center">
+            <h1 class="text-3xl font-bold mb-2">RRT* 路径规划算法可视化 - 优化版</h1>
+            <p class="text-gray-600 max-w-3xl mx-auto">
+                使用特定颜色显示通过choose_parent更新的节点和rewire的边
+            </p>
+        </header>
+        
+        <!-- 主要内容区域 -->
+        <main class="mb-8">
+            <!-- 可视化画布 -->
+            <div class="canvas-container mb-6">
+                <canvas id="rrtCanvas" width="800" height="500"></canvas>
+                
+                <!-- 加载状态 -->
+                <div id="loadingIndicator" class="absolute inset-0 bg-dark/70 flex items-center justify-center hidden">
+                    <div class="bg-white p-6 rounded-xl shadow-lg flex flex-col items-center">
+                        <i class="fa fa-circle-o-notch fa-spin text-primary text-3xl mb-3"></i>
+                        <p class="font-medium">算法运行中...</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 控制面板 -->
+            <div class="bg-white p-4 rounded-lg shadow-md mb-6">
+                <div class="flex flex-wrap gap-4 items-center justify-between">
+                    <div class="flex flex-wrap gap-3">
+                        <button id="startBtn" class="control-btn control-btn-primary">
+                            <i class="fa fa-play"></i> 开始
+                        </button>
+                        <button id="pauseBtn" class="control-btn control-btn-secondary" disabled>
+                            <i class="fa fa-pause"></i> 暂停
+                        </button>
+                        <button id="stepBtn" class="control-btn control-btn-accent">
+                            <i class="fa fa-step-forward"></i> 单步
+                        </button>
+                        <button id="resetBtn" class="control-btn control-btn-danger">
+                            <i class="fa fa-refresh"></i> 重置
+                        </button>
+                    </div>
+                    
+                    <div class="flex flex-wrap items-center gap-4">
+                        <div class="flex items-center gap-2">
+                            <label for="speedControl" class="font-medium whitespace-nowrap">速度:</label>
+                            <input type="range" id="speedControl" min="1" max="100" value="50" 
+                                class="w-32 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+                        </div>
+                        
+                        <div class="flex items-center gap-2">
+                            <label for="searchRadius" class="font-medium whitespace-nowrap">搜索半径:</label>
+                            <input type="range" id="searchRadius" min="5" max="50" value="15" 
+                                class="w-32 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 状态和信息面板 -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div class="bg-white p-4 rounded-lg shadow-md">
+                    <h3 class="font-bold text-lg mb-2 flex items-center gap-2">
+                        <i class="fa fa-info-circle text-primary"></i> 当前状态
+                    </h3>
+                    <div class="space-y-2 text-sm">
+                        <p><span class="font-medium">迭代次数:</span> <span id="iterCount">0</span></p>
+                        <p><span class="font-medium">节点数量:</span> <span id="nodeCount">0</span></p>
+                        <p><span class="font-medium">路径长度:</span> <span id="pathLength">--</span></p>
+                        <p><span class="font-medium">重构操作:</span> <span id="rewireCount">0</span></p>
+                    </div>
+                </div>
+                
+                <div class="bg-white p-4 rounded-lg shadow-md">
+                    <h3 class="font-bold text-lg mb-2 flex items-center gap-2">
+                        <i class="fa fa-question-circle text-accent"></i> 操作说明
+                    </h3>
+                    <ul class="text-sm space-y-1 list-disc list-inside">
+                        <li>点击"开始"按钮启动算法</li>
+                        <li>点击"单步"按钮逐步执行算法</li>
+                        <li>拖动滑块调整模拟速度</li>
+                        <li>调整搜索半径以增加重构操作</li>
+                        <li>点击画布可添加自定义障碍物</li>
+                        <li>重置按钮可重新生成场景</li>
+                    </ul>
+                </div>
+                
+                <div class="bg-white p-4 rounded-lg shadow-md">
+                    <h3 class="font-bold text-lg mb-2 flex items-center gap-2">
+                        <i class="fa fa-legend text-dark"></i> 图例
+                    </h3>
+                    <div class="text-sm space-y-1">
+                        <p class="flex items-center gap-2"><span class="inline-block w-4 h-4 bg-green-500 rounded-full"></span> 起点</p>
+                        <p class="flex items-center gap-2"><span class="inline-block w-4 h-4 bg-red-500 rounded-full"></span> 终点</p>
+                        <p class="flex items-center gap-2"><span class="inline-block w-4 h-4 bg-gray-500 rounded-full"></span> 障碍物</p>
+                        <p class="flex items-center gap-2"><span class="inline-block w-4 h-4 bg-blue-500 rounded-full"></span> 已生成节点</p>
+                        <p class="flex items-center gap-2"><span class="inline-block w-4 h-4 bg-yellow-500 rounded-full"></span> 新生成节点</p>
+                        <p class="flex items-center gap-2"><span class="inline-block w-4 h-4 bg-purple-500 rounded-full"></span> 最优父节点更新</p>
+                        <p class="flex items-center gap-2"><span class="inline-block w-4 h-0.5 bg-green-300"></span> 附近节点搜索区域</p>
+                        <p class="flex items-center gap-2"><span class="inline-block w-4 h-0.5 bg-blue-300"></span> 探索路径</p>
+                        <p class="flex items-center gap-2"><span class="inline-block w-4 h-0.5 bg-blue-600"></span> 最优路径</p>
+                        <p class="flex items-center gap-2"><span class="inline-block w-4 h-0.5 bg-orange-500"></span> 重构路径</p>
+                        <p class="flex items-center gap-2"><span class="inline-block w-4 h-0.5 bg-purple-500"></span> 最优父节点路径</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 算法过程说明 -->
+            <div class="bg-white p-5 rounded-lg shadow-md">
+                <h3 class="font-bold text-lg mb-3">RRT* 算法核心步骤</h3>
+                <div class="space-y-3 text-gray-700">
+                    <div class="flex gap-3">
+                        <div class="flex-shrink-0 w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center font-bold">1</div>
+                        <p>生成随机采样点，或有一定概率直接采样目标点</p>
+                    </div>
+                    <div class="flex gap-3">
+                        <div class="flex-shrink-0 w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center font-bold">2</div>
+                        <p>找到离随机点最近的已有节点</p>
+                    </div>
+                    <div class="flex gap-3">
+                        <div class="flex-shrink-0 w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center font-bold">3</div>
+                        <p>从最近节点向随机点扩展，生成新节点</p>
+                    </div>
+                    <div class="flex gap-3">
+                        <div class="flex-shrink-0 w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center font-bold">4</div>
+                        <p>寻找新节点周围的所有节点（在一定半径内）</p>
+                    </div>
+                    <div class="flex gap-3">
+                        <div class="flex-shrink-0 w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center font-bold">5</div>
+                        <p>从附近节点中选择最优父节点（使新节点成本最低）</p>
+                    </div>
+                    <div class="flex gap-3">
+                        <div class="flex-shrink-0 w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center font-bold">6</div>
+                        <p>执行rewire操作：优化附近节点的路径，更新父子关系</p>
+                    </div>
+                    <div class="flex gap-3">
+                        <div class="flex-shrink-0 w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center font-bold">7</div>
+                        <p>检查是否到达目标，若到达则生成最终路径</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+        
+        <!-- 页脚 -->
+        <footer class="text-center text-gray-500 text-sm py-4">
+            <p>RRT* 路径规划算法可视化工具 &copy; 2023</p>
+        </footer>
+    </div>
+
+    <script>
+        // 等待DOM加载完成
+        document.addEventListener('DOMContentLoaded', () => {
+            // 获取Canvas元素和上下文
+            const canvas = document.getElementById('rrtCanvas');
+            const ctx = canvas.getContext('2d');
+            
+            // 状态变量
+            let isRunning = false;
+            let isPaused = false;
+            let isInitialized = false;
+            let animationFrameId = null;
+            let lastTimestamp = 0;
+            let speedFactor = 50; // 速度因子，值越大速度越快
+            let rewireCount = 0; // 重构操作计数
+            
+            // RRT*算法参数 - 基于Python版本参数调整
+            const params = {
+                start: { x: 50, y: 450 },       // 起点
+                goal: { x: 750, y: 100 },       // 终点
+                goalRadius: 15,                 // 到达目标的判定半径
+                expandDis: 30,                  // 节点扩展距离
+                pathResolution: 5,              // 路径分辨率
+                goalSampleRate: 5,              // 目标点采样概率(%)
+                maxIter: 3000,                  // 最大迭代次数
+                connectCircleDist: 15,          // 附近节点搜索半径
+                robotRadius: 8,                 // 机器人半径（碰撞检测）
+                obstacleDensity: 8              // 障碍物密度
+            };
+            
+            // 算法数据
+            let rrtData = {
+                nodeList: [],          // 节点列表
+                obstacleList: [],      // 障碍物列表
+                path: null,            // 最终路径
+                iterCount: 0,          // 当前迭代次数
+                newNode: null,         // 当前新生成的节点（用于可视化）
+                nearNodes: [],         // 当前新节点的附近节点（用于可视化）
+                rewireNodes: [],       // 正在rewire的节点（用于可视化）
+                bestParentNodes: [],   // 通过choose_parent更新的节点
+                bestParentEdges: [],   // 通过choose_parent更新的边
+                rewireEdges: []        // rewire操作的边
+            };
+            
+            // 节点类
+            class Node {
+                constructor(x, y) {
+                    this.x = x;
+                    this.y = y;
+                    this.parent = null;
+                    this.cost = 0.0;
+                    this.pathX = [];
+                    this.pathY = [];
+                }
+            }
+            
+            // 初始化场景
+            function initScene() {
+                // 重置数据
+                rrtData = {
+                    nodeList: [],
+                    obstacleList: [],
+                    path: null,
+                    iterCount: 0,
+                    newNode: null,
+                    nearNodes: [],
+                    rewireNodes: [],
+                    bestParentNodes: [],
+                    bestParentEdges: [],
+                    rewireEdges: []
+                };
+                
+                rewireCount = 0;
+                document.getElementById('rewireCount').textContent = rewireCount;
+                
+                // 创建起点节点
+                const startNode = new Node(params.start.x, params.start.y);
+                startNode.cost = 0;
+                rrtData.nodeList.push(startNode);
+                
+                // 生成固定障碍物（基于Python版本）
+                generateFixedObstacles();
+                
+                // 标记为已初始化
+                isInitialized = true;
+                
+                // 绘制场景
+                drawScene();
+                
+                // 更新状态显示
+                updateStatus();
+            }
+            
+            // 生成固定障碍物（基于Python版本）
+            function generateFixedObstacles() {
+                // Python版本中的障碍物列表
+                const pythonObstacles = [
+                    {x: 5, y: 5, r: 1},
+                    {x: 3, y: 6, r: 2},
+                    {x: 3, y: 8, r: 2},
+                    {x: 3, y: 10, r: 2},
+                    {x: 7, y: 5, r: 2},
+                    {x: 9, y: 5, r: 2},
+                    {x: 8, y: 10, r: 1},
+                    {x: 6, y: 12, r: 1}
+                ];
+                
+                // 缩放和映射障碍物到画布坐标
+                const scale = 40; // 缩放因子
+                const offsetX = 50;
+                const offsetY = 50;
+                
+                pythonObstacles.forEach(obs => {
+                    rrtData.obstacleList.push({
+                        x: obs.x * scale + offsetX,
+                        y: canvas.height - (obs.y * scale + offsetY),
+                        r: obs.r * scale
+                    });
+                });
+            }
+            
+            // 绘制整个场景
+            function drawScene() {
+                // 清空画布
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                // 绘制网格背景
+                drawGrid();
+                
+                // 绘制障碍物
+                drawObstacles();
+                
+                // 绘制节点和路径
+                drawNodesAndEdges();
+                
+                // 绘制特殊节点（新生成的节点、附近节点等）
+                drawSpecialNodes();
+                
+                // 绘制最优父节点更新
+                drawBestParentUpdates();
+                
+                // 绘制rewire操作的边
+                drawRewireEdges();
+                
+                // 绘制起点和终点
+                drawStartAndGoal();
+            }
+            
+            // 绘制网格背景
+            function drawGrid() {
+                ctx.strokeStyle = '#e5e7eb';
+                ctx.lineWidth = 1;
+                
+                const gridSize = 50;
+                
+                // 绘制水平线
+                for (let y = 0; y <= canvas.height; y += gridSize) {
+                    ctx.beginPath();
+                    ctx.moveTo(0, y);
+                    ctx.lineTo(canvas.width, y);
+                    ctx.stroke();
+                }
+                
+                // 绘制垂直线
+                for (let x = 0; x <= canvas.width; x += gridSize) {
+                    ctx.beginPath();
+                    ctx.moveTo(x, 0);
+                    ctx.lineTo(x, canvas.height);
+                    ctx.stroke();
+                }
+            }
+            
+            // 绘制障碍物
+            function drawObstacles() {
+                rrtData.obstacleList.forEach(obstacle => {
+                    ctx.beginPath();
+                    ctx.arc(obstacle.x, obstacle.y, obstacle.r, 0, Math.PI * 2);
+                    ctx.fillStyle = '#9ca3af';
+                    ctx.fill();
+                    ctx.strokeStyle = '#6b7280';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                });
+            }
+            
+            // 绘制节点和连接线
+            function drawNodesAndEdges() {
+                // 绘制连接线
+                rrtData.nodeList.forEach(node => {
+                    if (node.parent) {
+                        ctx.beginPath();
+                        ctx.moveTo(node.x, node.y);
+                        ctx.lineTo(node.parent.x, node.parent.y);
+                        ctx.strokeStyle = '#93c5fd'; // 浅蓝色
+                        ctx.lineWidth = 2;
+                        ctx.stroke();
+                    }
+                });
+                
+                // 绘制节点
+                rrtData.nodeList.forEach(node => {
+                    // 跳过起点和当前新节点（单独绘制）
+                    if ((node.x === params.start.x && node.y === params.start.y) || 
+                        (rrtData.newNode && node.x === rrtData.newNode.x && node.y === rrtData.newNode.y)) {
+                        return;
+                    }
+                    
+                    ctx.beginPath();
+                    ctx.arc(node.x, node.y, 4, 0, Math.PI * 2);
+                    ctx.fillStyle = '#3b82f6'; // 蓝色
+                    ctx.fill();
+                    ctx.strokeStyle = '#2563eb';
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                });
+            }
+            
+            // 绘制特殊节点（新生成的节点、附近节点等）
+            function drawSpecialNodes() {
+                // 绘制附近节点
+                rrtData.nearNodes.forEach(node => {
+                    ctx.beginPath();
+                    ctx.arc(node.x, node.y, 6, 0, Math.PI * 2);
+                    ctx.fillStyle = 'rgba(16, 185, 129, 0.7)'; // 浅绿色
+                    ctx.fill();
+                    ctx.strokeStyle = '#059669';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                });
+                
+                // 绘制正在rewire的节点
+                rrtData.rewireNodes.forEach(node => {
+                    ctx.beginPath();
+                    ctx.arc(node.x, node.y, 6, 0, Math.PI * 2);
+                    ctx.fillStyle = 'rgba(249, 115, 22, 0.7)'; // 橙色
+                    ctx.fill();
+                    ctx.strokeStyle = '#c2410c';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                });
+                
+                // 绘制新生成的节点
+                if (rrtData.newNode) {
+                    ctx.beginPath();
+                    ctx.arc(rrtData.newNode.x, rrtData.newNode.y, 5, 0, Math.PI * 2);
+                    ctx.fillStyle = '#fbbf24'; // 黄色
+                    ctx.fill();
+                    ctx.strokeStyle = '#d97706';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                    
+                    // 绘制新节点到其父节点的连线
+                    if (rrtData.newNode.parent) {
+                        ctx.beginPath();
+                        ctx.moveTo(rrtData.newNode.x, rrtData.newNode.y);
+                        ctx.lineTo(rrtData.newNode.parent.x, rrtData.newNode.parent.y);
+                        ctx.strokeStyle = '#f59e0b'; // 橙色
+                        ctx.lineWidth = 3;
+                        ctx.stroke();
+                    }
+                    
+                    // 绘制搜索半径
+                    const r = params.connectCircleDist;
+                    
+                    ctx.beginPath();
+                    ctx.arc(rrtData.newNode.x, rrtData.newNode.y, r, 0, Math.PI * 2);
+                    ctx.strokeStyle = 'rgba(34, 197, 94, 0.3)'; // 绿色半透明
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                }
+            }
+            
+            // 绘制最优父节点更新
+            function drawBestParentUpdates() {
+                // 绘制通过choose_parent更新的节点
+                rrtData.bestParentNodes.forEach(node => {
+                    ctx.beginPath();
+                    ctx.arc(node.x, node.y, 6, 0, Math.PI * 2);
+                    ctx.fillStyle = 'rgba(147, 51, 234, 0.7)'; // 紫色
+                    ctx.fill();
+                    ctx.strokeStyle = '#7e22ce';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                });
+                
+                // 绘制通过choose_parent更新的边
+                rrtData.bestParentEdges.forEach(edge => {
+                    ctx.beginPath();
+                    ctx.moveTo(edge.from.x, edge.from.y);
+                    ctx.lineTo(edge.to.x, edge.to.y);
+                    ctx.strokeStyle = '#8b5cf6'; // 紫色
+                    ctx.lineWidth = 3;
+                    ctx.stroke();
+                });
+            }
+            
+            // 绘制rewire操作的边
+            function drawRewireEdges() {
+                // 绘制rewire操作的边
+                rrtData.rewireEdges.forEach(edge => {
+                    ctx.beginPath();
+                    ctx.moveTo(edge.from.x, edge.from.y);
+                    ctx.lineTo(edge.to.x, edge.to.y);
+                    ctx.strokeStyle = '#f97316'; // 橙色
+                    ctx.lineWidth = 3;
+                    ctx.setLineDash([5, 5]);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                });
+            }
+            
+            // 绘制起点和终点
+            function drawStartAndGoal() {
+                // 绘制起点
+                ctx.beginPath();
+                ctx.arc(params.start.x, params.start.y, 8, 0, Math.PI * 2);
+                ctx.fillStyle = '#10b981'; // 绿色
+                ctx.fill();
+                ctx.strokeStyle = '#059669';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                
+                // 绘制终点
+                ctx.beginPath();
+                ctx.arc(params.goal.x, params.goal.y, 8, 0, Math.PI * 2);
+                ctx.fillStyle = '#ef4444'; // 红色
+                ctx.fill();
+                ctx.strokeStyle = '#dc2626';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                
+                // 绘制终点周围的判定区域
+                ctx.beginPath();
+                ctx.arc(params.goal.x, params.goal.y, params.goalRadius, 0, Math.PI * 2);
+                ctx.strokeStyle = 'rgba(239, 68, 68, 0.3)';
+                ctx.lineWidth = 2;
+                ctx.setLineDash([5, 5]);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+            
+            // 更新状态显示
+            function updateStatus() {
+                document.getElementById('iterCount').textContent = rrtData.iterCount;
+                document.getElementById('nodeCount').textContent = rrtData.nodeList.length;
+                document.getElementById('rewireCount').textContent = rewireCount;
+                
+                if (rrtData.path) {
+                    const pathLength = calculatePathLength(rrtData.path);
+                    document.getElementById('pathLength').textContent = pathLength.toFixed(1);
+                } else {
+                    document.getElementById('pathLength').textContent = '--';
+                }
+            }
+            
+            // 计算路径长度
+            function calculatePathLength(path) {
+                let length = 0;
+                for (let i = 1; i < path.length; i++) {
+                    length += Math.hypot(
+                        path[i].x - path[i-1].x,
+                        path[i].y - path[i-1].y
+                    );
+                }
+                return length;
+            }
+            
+            // RRT*算法核心步骤 - 生成随机节点
+            function getRandomNode() {
+                // 以一定概率直接采样目标点
+                if (Math.random() * 100 < params.goalSampleRate) {
+                    return new Node(params.goal.x, params.goal.y);
+                }
+                
+                // 否则在画布范围内随机采样
+                const x = Math.random() * canvas.width;
+                const y = Math.random() * canvas.height;
+                return new Node(x, y);
+            }
+            
+            // RRT*算法核心步骤 - 找到最近的节点索引
+            function getNearestNodeIndex(nodeList, rndNode) {
+                let minDist = Infinity;
+                let minIndex = 0;
+                
+                for (let i = 0; i < nodeList.length; i++) {
+                    const dist = Math.hypot(nodeList[i].x - rndNode.x, nodeList[i].y - rndNode.y);
+                    if (dist < minDist) {
+                        minDist = dist;
+                        minIndex = i;
+                    }
+                }
+                
+                return minIndex;
+            }
+            
+            // RRT*算法核心步骤 - 从一个节点向另一个节点扩展
+            function steer(fromNode, toNode, extendLength = null) {
+                const dx = toNode.x - fromNode.x;
+                const dy = toNode.y - fromNode.y;
+                const dist = Math.hypot(dx, dy);
+                
+                // 如果未指定扩展长度，则使用默认值
+                if (extendLength === null) {
+                    extendLength = params.expandDis;
+                }
+                
+                // 计算扩展后的新节点位置
+                const newNode = new Node(
+                    fromNode.x + (dx / dist) * Math.min(extendLength, dist),
+                    fromNode.y + (dy / dist) * Math.min(extendLength, dist)
+                );
+                
+                // 设置父节点
+                newNode.parent = fromNode;
+                
+                return newNode;
+            }
+            
+            // RRT*算法核心步骤 - 检查碰撞
+            function checkCollision(node, obstacleList, robotRadius) {
+                // 检查节点是否在画布外
+                if (node.x < 0 || node.x > canvas.width || node.y < 0 || node.y > canvas.height) {
+                    return false;
+                }
+                
+                // 检查与障碍物的碰撞
+                for (let i = 0; i < obstacleList.length; i++) {
+                    const obstacle = obstacleList[i];
+                    const dist = Math.hypot(node.x - obstacle.x, node.y - obstacle.y);
+                    
+                    // 如果距离小于障碍物半径加上机器人半径，则发生碰撞
+                    if (dist <= obstacle.r + robotRadius) {
+                        return false;
+                    }
+                }
+                
+                return true;
+            }
+            
+            // RRT*算法核心步骤 - 寻找附近节点
+            function findNearNodes(newNode) {
+                const nearNodes = [];
+                
+                // 计算所有节点到新节点的距离
+                for (let i = 0; i < rrtData.nodeList.length; i++) {
+                    const node = rrtData.nodeList[i];
+                    const dx = node.x - newNode.x;
+                    const dy = node.y - newNode.y;
+                    const dist = Math.hypot(dx, dy);
+                    
+                    if (dist <= params.connectCircleDist) {
+                        nearNodes.push(node);
+                    }
+                }
+                
+                return nearNodes;
+            }
+            
+            // RRT*算法核心步骤 - 选择最优父节点
+            function chooseParent(newNode, nearNodes) {
+                if (nearNodes.length === 0) {
+                    return newNode;
+                }
+                
+                // 重置最优父节点数据
+                rrtData.bestParentNodes = [];
+                rrtData.bestParentEdges = [];
+                
+                // 计算从每个附近节点到新节点的成本
+                let minCost = newNode.cost;
+                let bestNode = newNode;
+                
+                for (let i = 0; i < nearNodes.length; i++) {
+                    const nearNode = nearNodes[i];
+                    const tNode = steer(nearNode, newNode);
+                    
+                    if (tNode && checkCollision(tNode, rrtData.obstacleList, params.robotRadius)) {
+                        // 计算成本：附近节点的成本 + 两点之间的距离
+                        const cost = nearNode.cost + Math.hypot(tNode.x - nearNode.x, tNode.y - nearNode.y);
+                        
+                        if (cost < minCost) {
+                            minCost = cost;
+                            bestNode = tNode;
+                            bestNode.cost = cost;
+                            bestNode.parent = nearNode;
+                            
+                            // 记录最优父节点更新
+                            rrtData.bestParentNodes.push(bestNode);
+                            rrtData.bestParentEdges.push({
+                                from: nearNode,
+                                to: bestNode
+                            });
+                        }
+                    }
+                }
+                
+                return bestNode;
+            }
+            
+            // RRT*算法核心步骤 - 重连操作
+            function rewire(newNode, nearNodes) {
+                const rewireNodes = [];
+                rrtData.rewireEdges = []; // 重置rewire边
+                
+                console.log("执行rewire操作，检查附近节点:", nearNodes.length, "个");
+                
+                for (let i = 0; i < nearNodes.length; i++) {
+                    const nearNode = nearNodes[i];
+                    
+                    // 跳过父节点
+                    if (nearNode === newNode.parent) {
+                        continue;
+                    }
+                    
+                    const edgeNode = steer(newNode, nearNode);
+                    
+                    if (!edgeNode) {
+                        continue;
+                    }
+                    
+                    // 计算通过新节点到达附近节点的成本
+                    edgeNode.cost = newNode.cost + Math.hypot(edgeNode.x - newNode.x, edgeNode.y - newNode.y);
+                    
+                    // 检查路径是否无碰撞且成本更低
+                    const noCollision = checkCollision(edgeNode, rrtData.obstacleList, params.robotRadius);
+                    const improvedCost = nearNode.cost > edgeNode.cost;
+                    
+                    if (noCollision && improvedCost) {
+                        console.log("发现更优路径，更新节点:", nearNode.x.toFixed(1), nearNode.y.toFixed(1), 
+                                  "原成本:", nearNode.cost.toFixed(1), "新成本:", edgeNode.cost.toFixed(1));
+                        
+                        // 记录rewire边
+                        rrtData.rewireEdges.push({
+                            from: newNode,
+                            to: nearNode
+                        });
+                        
+                        // 更新附近节点的父节点和成本
+                        nearNode.parent = newNode;
+                        nearNode.cost = edgeNode.cost;
+                        rewireNodes.push(nearNode);
+                        rewireCount++;
+                    }
+                }
+                
+                return rewireNodes;
+            }
+            
+            // 检查是否到达目标
+            function isGoalReached(node) {
+                const dist = Math.hypot(node.x - params.goal.x, node.y - params.goal.y);
+                return dist <= params.goalRadius;
+            }
+            
+            // 寻找能连接到目标的最优节点
+            function searchBestGoalNode() {
+                let minCost = Infinity;
+                let bestNode = null;
+                
+                // 查找所有可以连接到目标的节点
+                for (let i = 0; i < rrtData.nodeList.length; i++) {
+                    const node = rrtData.nodeList[i];
+                    const distToGoal = Math.hypot(node.x - params.goal.x, node.y - params.goal.y);
+                    
+                    if (distToGoal <= params.goalRadius) {
+                        const totalCost = node.cost + distToGoal;
+                        
+                        if (totalCost < minCost) {
+                            minCost = totalCost;
+                            bestNode = node;
+                        }
+                    }
+                }
+                
+                return bestNode;
+            }
+            
+            // 生成最终路径
+            function generateFinalCourse(goalNode) {
+                const path = [];
+                let currentNode = goalNode;
+                
+                while (currentNode !== null) {
+                    path.push({x: currentNode.x, y: currentNode.y});
+                    currentNode = currentNode.parent;
+                }
+                
+                return path.reverse();
+            }
+            
+            // 单步执行RRT*算法
+            function stepRRT() {
+                // 检查是否达到最大迭代次数或已找到路径
+                if (rrtData.iterCount >= params.maxIter || rrtData.path) {
+                    stopSimulation();
+                    return false;
+                }
+                
+                // 重置可视化数据
+                rrtData.newNode = null;
+                rrtData.nearNodes = [];
+                rrtData.rewireNodes = [];
+                rrtData.bestParentNodes = [];
+                rrtData.bestParentEdges = [];
+                rrtData.rewireEdges = [];
+                
+                // 1. 生成随机节点
+                const rndNode = getRandomNode();
+                
+                // 2. 找到最近的节点
+                const nearestIndex = getNearestNodeIndex(rrtData.nodeList, rndNode);
+                const nearestNode = rrtData.nodeList[nearestIndex];
+                
+                // 3. 从最近节点扩展生成新节点
+                let newNode = steer(nearestNode, rndNode, params.expandDis);
+                
+                // 4. 检查碰撞
+                if (checkCollision(newNode, rrtData.obstacleList, params.robotRadius)) {
+                    // 计算新节点的初始成本
+                    newNode.cost = nearestNode.cost + Math.hypot(newNode.x - nearestNode.x, newNode.y - nearestNode.y);
+                    
+                    // 5. 寻找附近节点
+                    const nearNodes = findNearNodes(newNode);
+                    
+                    // 6. 选择最优父节点
+                    newNode = chooseParent(newNode, nearNodes);
+                    
+                    // 可视化相关：记录新节点和附近节点
+                    rrtData.newNode = newNode;
+                    rrtData.nearNodes = nearNodes;
+                    
+                    // 添加新节点到列表
+                    rrtData.nodeList.push(newNode);
+                    
+                    // 7. 执行rewire操作
+                    const rewired = rewire(newNode, nearNodes);
+                    rrtData.rewireNodes = rewired;
+                    
+                    // 8. 检查是否到达目标
+                    if (isGoalReached(newNode)) {
+                        const goalNode = searchBestGoalNode();
+                        if (goalNode) {
+                            rrtData.path = generateFinalCourse(goalNode);
+                            console.log("找到路径！");
+                        }
+                    }
+                }
+                
+                // 更新迭代次数和状态
+                rrtData.iterCount++;
+                updateStatus();
+                
+                // 绘制场景
+                drawScene();
+                
+                return true;
+            }
+            
+            // 动画循环
+            function animate(timestamp) {
+                if (!lastTimestamp) lastTimestamp = timestamp;
+                const elapsed = timestamp - lastTimestamp;
+                
+                // 根据速度因子控制执行步长
+                const stepsPerFrame = Math.max(1, Math.floor(speedFactor / 10));
+                
+                // 每帧执行多步，加快模拟速度
+                let stepsExecuted = 0;
+                while (stepsExecuted < stepsPerFrame && isRunning && !rrtData.path) {
+                    if (!stepRRT()) break;
+                    stepsExecuted++;
+                }
+                
+                lastTimestamp = timestamp;
+                
+                // 如果仍在运行，继续请求动画帧
+                if (isRunning) {
+                    animationFrameId = requestAnimationFrame(animate);
+                } else {
+                    // 隐藏加载指示器
+                    document.getElementById('loadingIndicator').classList.add('hidden');
+                }
+            }
+            
+            // 开始模拟
+            function startSimulation() {
+                if (isRunning && !isPaused) return;
+                
+                // 如果是首次运行，初始化场景
+                if (!isInitialized) {
+                    initScene();
+                }
+                
+                isRunning = true;
+                isPaused = false;
+                
+                // 更新按钮状态
+                document.getElementById('startBtn').disabled = true;
+                document.getElementById('pauseBtn').disabled = false;
+                document.getElementById('stepBtn').disabled = true;
+                
+                // 显示加载指示器
+                document.getElementById('loadingIndicator').classList.remove('hidden');
+                
+                // 开始动画循环
+                lastTimestamp = 0;
+                animationFrameId = requestAnimationFrame(animate);
+            }
+            
+            // 单步执行
+            function stepSimulation() {
+                if (isRunning) {
+                    pauseSimulation();
+                }
+                
+                if (!isInitialized) {
+                    initScene();
+                }
+                
+                // 执行一步
+                stepRRT();
+            }
+            
+            // 暂停模拟
+            function pauseSimulation() {
+                if (!isRunning || isPaused) return;
+                
+                isPaused = true;
+                isRunning = false;
+                
+                // 更新按钮状态
+                document.getElementById('startBtn').disabled = false;
+                document.getElementById('pauseBtn').disabled = true;
+                document.getElementById('stepBtn').disabled = false;
+                
+                // 取消动画帧请求
+                if (animationFrameId) {
+                    cancelAnimationFrame(animationFrameId);
+                    animationFrameId = null;
+                }
+                
+                // 隐藏加载指示器
+                document.getElementById('loadingIndicator').classList.add('hidden');
+            }
+            
+            // 停止模拟
+            function stopSimulation() {
+                isRunning = false;
+                isPaused = false;
+                
+                // 更新按钮状态
+                document.getElementById('startBtn').disabled = false;
+                document.getElementById('pauseBtn').disabled = true;
+                document.getElementById('stepBtn').disabled = false;
+                
+                // 取消动画帧请求
+                if (animationFrameId) {
+                    cancelAnimationFrame(animationFrameId);
+                    animationFrameId = null;
+                }
+                
+                // 隐藏加载指示器
+                document.getElementById('loadingIndicator').classList.add('hidden');
+            }
+            
+            // 重置模拟
+            function resetSimulation() {
+                // 停止当前模拟
+                stopSimulation();
+                
+                // 重新初始化场景
+                initScene();
+            }
+            
+            // 添加自定义障碍物
+            function addCustomObstacle(x, y) {
+                // 确保不在起点或终点附近添加障碍物
+                const distToStart = Math.hypot(x - params.start.x, y - params.start.y);
+                const distToGoal = Math.hypot(x - params.goal.x, y - params.goal.y);
+                
+                if (distToStart > 50 && distToGoal > 50) {
+                    rrtData.obstacleList.push({ x, y, r: 20 });
+                    drawScene();
+                }
+            }
+            
+            // 绑定事件监听器
+            document.getElementById('startBtn').addEventListener('click', startSimulation);
+            document.getElementById('pauseBtn').addEventListener('click', pauseSimulation);
+            document.getElementById('stepBtn').addEventListener('click', stepSimulation);
+            document.getElementById('resetBtn').addEventListener('click', resetSimulation);
+            
+            // 速度控制
+            document.getElementById('speedControl').addEventListener('input', (e) => {
+                speedFactor = parseInt(e.target.value);
+            });
+            
+            // 搜索半径控制
+            document.getElementById('searchRadius').addEventListener('input', (e) => {
+                params.connectCircleDist = parseInt(e.target.value);
+                if (!isRunning) {
+                    drawScene();
+                }
+            });
+            
+            // 点击画布添加障碍物
+            canvas.addEventListener('click', (e) => {
+                if (!isRunning) {
+                    const rect = canvas.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const y = e.clientY - rect.top;
+                    addCustomObstacle(x, y);
+                }
+            });
+            
+            // 初始化场景
+            initScene();
+        });
+    </script>
+</body>
+</html>
